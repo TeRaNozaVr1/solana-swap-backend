@@ -1,25 +1,21 @@
 from fastapi import FastAPI, HTTPException
 import requests
 from solana.rpc.api import Client
-from solders.pubkey import Pubkey
-from solders.keypair import Keypair
-from solders.transaction import Transaction
 from solana.rpc.types import TxOpts
-from spl.token.instructions import transfer, get_associated_token_address
+from solana.publickey import PublicKey
 from spl.token.client import Token
 
-# Налаштування
+# Константи
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 BINANCE_API_URL = "https://api.binance.com/api/v3/ticker/price"
 TOKEN_PRICE = 0.00048  # 1 SPL = 0.00048$
-RECEIVER_WALLET = "Ваш_Гаманець"
-SPL_TOKEN_MINT = "Ваш_Токен"
-PRIVATE_KEY = "Ваш_Приватний_Ключ"
+RECEIVER_WALLET = "4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26"
+SPL_TOKEN_MINT = "3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo"
 
 app = FastAPI()
 client = Client(SOLANA_RPC_URL)
 
-# Отримуємо курс валют
+# Отримання курсу валют
 def get_token_price(pair: str) -> float:
     try:
         response = requests.get(f"{BINANCE_API_URL}?symbol={pair}")
@@ -27,7 +23,7 @@ def get_token_price(pair: str) -> float:
     except:
         return 0.0
 
-# Розраховуємо кількість SPL-токенів
+# Розрахунок кількості SPL-токенів
 def calculate_spl_amount(currency: str, amount: float) -> float:
     price = {
         "SOL": get_token_price("SOLUSDT"),
@@ -37,48 +33,22 @@ def calculate_spl_amount(currency: str, amount: float) -> float:
     
     return round((amount * price) / TOKEN_PRICE, 2)
 
-# Перевіряємо транзакцію
+# Перевірка транзакції
 def check_transaction(tx_hash: str, sender_wallet: str) -> bool:
     try:
-        tx_data = client.get_confirmed_transaction(tx_hash)
-        if not tx_data["result"]:
+        status = client.get_signature_status(tx_hash)
+        if not status["result"]["value"]:
             return False
         
-        for instruction in tx_data["result"]["transaction"]["message"]["instructions"]:
-            if instruction["programIdIndex"] == 2:
-                if instruction["accounts"][1] == sender_wallet and instruction["accounts"][2] == RECEIVER_WALLET:
-                    return True
-        return False
+        confirmations = status["result"]["value"]["confirmations"]
+        if confirmations and confirmations < 1:
+            return False
+        
+        return True
     except:
         return False
 
-# Відправляємо SPL-токени
-def send_spl_tokens(to_wallet: str, amount: float):
-    sender = Keypair.from_base58_string(PRIVATE_KEY)
-    receiver = Pubkey.from_string(to_wallet)
-    mint = Pubkey.from_string(SPL_TOKEN_MINT)
-
-    # Знаходимо ATA (associated token account) отримувача
-    receiver_ata = get_associated_token_address(receiver, mint)
-    
-    # Знаходимо ATA відправника
-    sender_ata = get_associated_token_address(sender.pubkey(), mint)
-
-    # Створюємо транзакцію
-    tx = Transaction().add(
-        transfer(
-            source=sender_ata,
-            dest=receiver_ata,
-            owner=sender.pubkey(),
-            amount=int(amount * (10**9)),  # Якщо токен має 9 знаків після коми
-        )
-    )
-
-    # Відправляємо транзакцію
-    response = client.send_transaction(tx, sender, opts=TxOpts(skip_preflight=True))
-    return response["result"]
-
-# Ендпойнти
+# API ендпойнти
 @app.get("/")
 def read_root():
     return {"message": "Backend is running!"}
@@ -101,8 +71,13 @@ def swap(data: dict):
         raise HTTPException(status_code=400, detail="Transaction not found")
 
     spl_tokens = calculate_spl_amount(currency, amount)
-    tx_hash = send_spl_tokens(wallet, spl_tokens)
+    
+    return {
+        "wallet": wallet,
+        "spl_tokens": spl_tokens,
+        "status": "Verified"
+    }
 
-    return {"message": "Tokens sent successfully", "txHash": tx_hash}
+
 
 
