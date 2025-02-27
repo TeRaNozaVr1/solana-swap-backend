@@ -1,10 +1,20 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import requests
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
-from fastapi.responses import JSONResponse
 
 app = FastAPI()
+
+# Дозволяємо CORS для Netlify
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://inquisitive-manatee-aa9f3b.netlify.app"],
+    allow_credentials=True,
+    allow_methods=["*"] ,  # Дозволяємо всі методи
+    allow_headers=["*"]
+)
 
 # Налаштування
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
@@ -13,15 +23,16 @@ TOKEN_PRICE = 0.00048  # 1 SPL = 0.00048$
 RECEIVER_WALLET = "4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26dF3cVU"
 SPL_TOKEN_MINT = "3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo"
 
-app = FastAPI()
 client = Client(SOLANA_RPC_URL)
 
 # Отримання курсу валют
 def get_token_price(pair: str) -> float:
     try:
         response = requests.get(f"{BINANCE_API_URL}?symbol={pair}")
+        response.raise_for_status()
         return float(response.json()["price"])
-    except:
+    except Exception as e:
+        print(f"Помилка отримання ціни {pair}: {e}")
         return 0.0
 
 # Розрахунок кількості SPL-токенів
@@ -32,7 +43,7 @@ def calculate_spl_amount(currency: str, amount: float) -> float:
         "USDC": get_token_price("USDCUSDT")
     }.get(currency, 0)
     
-    return round((amount * price) / TOKEN_PRICE, 2)
+    return round((amount * price) / TOKEN_PRICE, 2) if price else 0.0
 
 # Перевірка транзакції (без ключа)
 def check_transaction(tx_hash: str, sender_wallet: str) -> bool:
@@ -41,7 +52,6 @@ def check_transaction(tx_hash: str, sender_wallet: str) -> bool:
         if not tx_data or "result" not in tx_data or not tx_data["result"]:
             return False
         
-        # Перевіряємо, чи є в транзакції переказ SPL-токенів на наш гаманець
         for instruction in tx_data["result"]["transaction"]["message"]["instructions"]:
             if isinstance(instruction, dict) and "parsed" in instruction:
                 parsed = instruction["parsed"]
@@ -53,6 +63,10 @@ def check_transaction(tx_hash: str, sender_wallet: str) -> bool:
         return False
 
 # API ендпойнти
+@app.get("/")
+def read_root():
+    return {"message": "Backend is running!"}
+
 @app.options("/swap")
 async def options_handler():
     return JSONResponse(content={}, headers={
@@ -60,11 +74,7 @@ async def options_handler():
         "Access-Control-Allow-Methods": "POST",
         "Access-Control-Allow-Headers": "*"
     })
-    
-@app.get("/")
-def read_root():
-    return {"message": "Backend is running!"}
-    
+
 @app.get("/price")
 def get_price(pair: str):
     return {"price": get_token_price(pair)}
@@ -89,6 +99,7 @@ def swap(data: dict):
         "spl_tokens": spl_tokens,
         "status": "Verified"
     }
+
 
 
 
