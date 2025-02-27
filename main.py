@@ -3,7 +3,7 @@ import requests
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 
-# Конфігурація
+# Налаштування
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 BINANCE_API_URL = "https://api.binance.com/api/v3/ticker/price"
 TOKEN_PRICE = 0.00048  # 1 SPL = 0.00048$
@@ -13,7 +13,7 @@ SPL_TOKEN_MINT = "3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo"
 app = FastAPI()
 client = Client(SOLANA_RPC_URL)
 
-# Отримання курсу валют з Binance
+# Отримання курсу валют
 def get_token_price(pair: str) -> float:
     try:
         response = requests.get(f"{BINANCE_API_URL}?symbol={pair}")
@@ -31,14 +31,14 @@ def calculate_spl_amount(currency: str, amount: float) -> float:
     
     return round((amount * price) / TOKEN_PRICE, 2)
 
-# Перевірка транзакції
+# Перевірка транзакції (без ключа)
 def check_transaction(tx_hash: str, sender_wallet: str) -> bool:
     try:
-        tx_data = client.get_confirmed_transaction(tx_hash, "finalized")
-
+        tx_data = client.get_transaction(tx_hash)
         if not tx_data or "result" not in tx_data or not tx_data["result"]:
             return False
-
+        
+        # Перевіряємо, чи є в транзакції переказ SPL-токенів на наш гаманець
         for instruction in tx_data["result"]["transaction"]["message"]["instructions"]:
             if isinstance(instruction, dict) and "parsed" in instruction:
                 parsed = instruction["parsed"]
@@ -49,7 +49,7 @@ def check_transaction(tx_hash: str, sender_wallet: str) -> bool:
         print("Помилка перевірки транзакції:", str(e))
         return False
 
-# API
+# API ендпойнти
 @app.get("/")
 def read_root():
     return {"message": "Backend is running!"}
@@ -78,6 +78,7 @@ def swap(data: dict):
         "spl_tokens": spl_tokens,
         "status": "Verified"
     }
+
 
 
 
