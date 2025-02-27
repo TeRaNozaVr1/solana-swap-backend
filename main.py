@@ -15,10 +15,6 @@ app.add_middleware(
     allow_headers=["*"],  # Дозволити всі заголовки
 )
 
-@app.post("/swap")
-async def swap_handler(data: dict):
-    return {"message": "Транзакція оброблена", "data": data}
-
 # Налаштування
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 BINANCE_API_URL = "https://api.binance.com/api/v3/ticker/price"
