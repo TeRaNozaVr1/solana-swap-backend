@@ -9,8 +9,8 @@ from spl.token.client import Token
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 BINANCE_API_URL = "https://api.binance.com/api/v3/ticker/price"
 TOKEN_PRICE = 0.00048  # 1 SPL = 0.00048$
-RECEIVER_WALLET = Pubkey.from_string("4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26")
-SPL_TOKEN_MINT = Pubkey.from_string("3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo")
+RECEIVER_WALLET = 4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26
+SPL_TOKEN_MINT = 3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo
 
 app = FastAPI()
 client = Client(SOLANA_RPC_URL)
