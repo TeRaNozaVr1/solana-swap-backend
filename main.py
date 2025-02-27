@@ -79,6 +79,10 @@ def send_spl_tokens(to_wallet: str, amount: float):
     return response["result"]
 
 # Ендпойнти
+@app.get("/")
+def read_root():
+    return {"message": "Backend is running!"}
+    
 @app.get("/price")
 def get_price(pair: str):
     return {"price": get_token_price(pair)}
