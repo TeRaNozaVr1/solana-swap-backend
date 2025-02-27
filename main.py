@@ -2,6 +2,22 @@ from fastapi import FastAPI, HTTPException
 import requests
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# Дозволяємо CORS для Netlify
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://inquisitive-manatee-aa9f3b.netlify.app/"],  # замініть на свій домен
+    allow_credentials=True,
+    allow_methods=["*"],  # Дозволити всі методи (GET, POST, PUT, DELETE і т.д.)
+    allow_headers=["*"],  # Дозволити всі заголовки
+)
+
+@app.post("/swap")
+async def swap_handler(data: dict):
+    return {"message": "Транзакція оброблена", "data": data}
 
 # Налаштування
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
@@ -59,6 +75,8 @@ def get_price(pair: str):
     return {"price": get_token_price(pair)}
 
 @app.post("/swap")
+async def swap_handler(data: dict):
+    return {"message": "Транзакція оброблена", "data": data}
 def swap(data: dict):
     wallet = data.get("wallet")
     currency = data.get("currency")
