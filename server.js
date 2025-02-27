@@ -12,7 +12,7 @@ app.use(cors({
 }));
 
 // API для взаємодії з main.py
-const PYTHON_API_URL = "https://solana-python-backend.onrender.com/process"; // замініть на реальний URL
+const PYTHON_API_URL = "https://solana-swap-backend.onrender.com"; // замініть на реальний URL
 
 const axios = require("axios");
 
