@@ -11,7 +11,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://inquisitive-manatee-aa9f3b.netlify.app/"],  # замініть на свій домен
     allow_credentials=True,
-    allow_methods=["*"],  # Дозволити всі методи (GET, POST, PUT, DELETE і т.д.)
+    allow_methods=["GET,HEAD,PUT,PATCH,POST,DELETE"],  # Дозволити всі методи (GET, POST, PUT, DELETE і т.д.)
     allow_headers=["*"],  # Дозволити всі заголовки
 )
 
