@@ -3,7 +3,7 @@ Flask
 flask_cors
 uvicorn
 base58
-solana
+solana==0.22.3
 python-dotenv
 requests
 solders
