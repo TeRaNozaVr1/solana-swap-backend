@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 base58
-solana
+pip install solana
 pyserum
 python-dotenv
 httpx
