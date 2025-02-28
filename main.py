@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from solana.rpc.async_api import AsyncClient
 from solders.transaction import Transaction
 from solders.system_program import transfer
-from solana.publickey import PublicKey
+from solders.pubkey import Pubkey as PublicKey
 from solders.signature import Signature
 from solders.keypair import Keypair
 
