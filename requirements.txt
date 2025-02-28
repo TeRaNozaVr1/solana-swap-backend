@@ -10,3 +10,4 @@ orjson
 loguru
 pytz
 requests
+solders
