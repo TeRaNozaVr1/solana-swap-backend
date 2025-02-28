@@ -7,3 +7,4 @@ solana
 python-dotenv
 requests
 solders
+pyserum
