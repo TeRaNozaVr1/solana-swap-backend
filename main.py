@@ -1,103 +1,81 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import requests
-from solana.rpc.api import Client
-from solana.transaction import Transaction
-from solana.publickey import PublicKey
-from solana.system_program import TransferParams, transfer
-from solders.keypair import Keypair
 import os
+from solana.rpc.api import Client
+from solana.publickey import PublicKey
+from solana.keypair import Keypair
+from pyserum.client import Client as SerumClient
+from pyserum.market import Market
+from pyserum.transaction import Transaction
+from solana.system_program import TransferParams, transfer
 
-app = Flask(__name__)
-CORS(app)
-
-# Solana Mainnet API
+# Налаштування Solana Mainnet
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 solana_client = Client(SOLANA_RPC_URL)
 
-# Гаманець, на який користувачі будуть надсилати токени
-RECEIVING_WALLET = "4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26dF3cVU"
-
-# Завантаження секретного ключа сервісного гаманця
+# Завантажуємо секретний ключ користувача
 SERVICE_WALLET_SECRET = os.getenv("SERVICE_WALLET_SECRET")  # Змінна середовища
-service_wallet = Keypair.from_base58_string(SERVICE_WALLET_SECRET)
+service_wallet = Keypair.from_secret_key(bytes.fromhex(SERVICE_WALLET_SECRET))
 
-# URL для пошуку кращого маршруту для обміну
-EXCHANGE_API_URL = "https://api.1sol.io/swap"  # Приклад API для маршрутування
+# Встановлюємо адреси токенів
+USDT_MINT_ADDRESS = PublicKey("Es9vMFrzrQZsjAFVUtzz5N7Z9WhwZ1x7pH2aVttYhf5d")
+USDC_MINT_ADDRESS = PublicKey("Es9vMFrzrQZsjAFVUtzz5N7Z9WhwZ1x7pH2aVttYhf5d")
+TOKEN_ACCOUNT = PublicKey("4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26dF3cVU")
 
-@app.route("/connect_wallet", methods=["POST"])
-def connect_wallet():
-    """Підключення гаманця користувача"""
-    data = request.json
-    wallet_address = data.get("wallet")
-    wallet_type = data.get("type")
+# Підключення до ринку Serum для обміну токенів
+serum_client = SerumClient(SOLANA_RPC_URL)
+market_address = PublicKey("4PssYJzH2mmY1wb7u3xmf62rPY4DZcHg6b17Zj2uJKrb")
+market = Market.load(serum_client, market_address)
 
-    if not wallet_address:
-        return jsonify({"error": "Wallet address required"}), 400
-
-    return jsonify({"success": True, "wallet": wallet_address, "type": wallet_type})
-
-@app.route("/exchange", methods=["POST"])
-def exchange_tokens():
-    """Обмін SPL-токенів на USDT/USDC"""
-    data = request.json
-    user_wallet = data.get("wallet")
-    amount = float(data.get("amount"))
-    token_type = data.get("token_type")
-
-    if not user_wallet or amount <= 0:
-        return jsonify({"error": "Invalid request"}), 400
-
-    if token_type not in ["USDT", "USDC"]:
-        return jsonify({"error": "Only USDT and USDC supported"}), 400
-
+# Виконання обміну SPL-токенів
+def exchange_tokens(amount, token_type):
     try:
-        # Крок 1: Запит для пошуку найкращого маршруту
-        params = {
-            "fromToken": "SPL_TOKEN_ADDRESS",  # замінити на адресу вашого токена
-            "toToken": "USDT" if token_type == "USDT" else "USDC",
-            "amount": amount
-        }
+        # Підготовка трансакції для обміну токенів
+        transaction = Transaction()
 
-        response = requests.get(EXCHANGE_API_URL, params=params)
-        exchange_route = response.json()
+        if token_type == "USDT":
+            # Встановлюємо адреси обміну USDT
+            token_to_send = USDT_MINT_ADDRESS
+        elif token_type == "USDC":
+            # Встановлюємо адреси обміну USDC
+            token_to_send = USDC_MINT_ADDRESS
+        else:
+            raise ValueError("Unsupported token type")
 
-        if "error" in exchange_route:
-            return jsonify({"error": "Exchange route not found"}), 500
-
-        # Крок 2: Створення транзакції для обміну
-        # Тут необхідно використовувати алгоритм для заміни токенів через знайдений маршрут
-        tx = Transaction()
-
-        tx.add(
-            transfer(
-                TransferParams(
-                    from_pubkey=service_wallet.pubkey(),
-                    to_pubkey=PublicKey(user_wallet),
-                    lamports=int(amount * 1_000_000)  # Конвертувати в lamports (1 USDT = 1_000_000 lamports)
-                )
-            )
+        # Параметри для переведення
+        transfer_params = TransferParams(
+            from_pubkey=service_wallet.public_key,
+            to_pubkey=TOKEN_ACCOUNT,
+            lamports=int(amount * 1_000_000)  # Припускаємо, що 1 USDT = 1_000_000 lamports
         )
 
-        # Крок 3: Підпис транзакції
-        tx.sign(service_wallet)
+        # Додаємо операцію переведення
+        transaction.add(transfer(transfer_params))
 
-        # Крок 4: Відправка транзакції
-        tx_sig = solana_client.send_transaction(tx)
+        # Підписуємо транзакцію
+        transaction.sign(service_wallet)
 
-        return jsonify({"success": True, "txid": str(tx_sig)})
+        # Відправка транзакції в мережу
+        tx_sig = solana_client.send_transaction(transaction)
+
+        return {"success": True, "txid": tx_sig["result"]}
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return {"error": str(e)}
 
-@app.route("/check_transaction/<txid>", methods=["GET"])
-def check_transaction(txid):
-    """Перевірка статусу транзакції"""
-    try:
-        result = solana_client.get_transaction(txid)
-        return jsonify({"status": result})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# Призначити адреси для замовлення
+@app.route("/exchange", methods=["POST"])
+def exchange():
+    data = request.json
+    amount = data.get("amount")
+    token_type = data.get("token_type")
+
+    if not amount or not token_type:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    # Виконання обміну
+    result = exchange_tokens(amount, token_type)
+    return jsonify(result)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
