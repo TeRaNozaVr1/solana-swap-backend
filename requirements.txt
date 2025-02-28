@@ -1,7 +1,13 @@
-requests
 fastapi
 uvicorn
-solana
-solders
 base58
+solana
+spl-token
+pyserum
 python-dotenv
+httpx
+aiohttp
+orjson
+loguru
+pytz
+requests
