@@ -1,6 +1,7 @@
 fastapi
 Flask
 flask_cors
+uvicorn
 base58
 solana
 python-dotenv
