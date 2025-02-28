@@ -1,109 +1,88 @@
-import os
-import requests
-import base58
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from solana.rpc.async_api import AsyncClient
-from solana.rpc.types import MemcmpOpts, TokenAccountOpts
-from solders.signature import Signature
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from solana.rpc.api import Client
+from solana.transaction import Transaction
 from solana.publickey import PublicKey
+from solana.system_program import TransferParams, transfer
 from solders.keypair import Keypair
-from spl.token.instructions import transfer_checked
-from spl.token.constants import TOKEN_PROGRAM_ID
+from solders.message import Message
+import base64
+import os
 
-# Завантаження змінних оточення
-load_dotenv()
+app = Flask(__name__)
+CORS(app)
 
-app = FastAPI()
-
-# 🔹 Основні параметри
+# Solana Mainnet API
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
-TOKEN_DECIMALS = 6  # USDT/USDC мають 6 знаків після коми
+solana_client = Client(SOLANA_RPC_URL)
 
-# 🔹 Адреси гаманців
-SPL_RECEIVER_WALLET = PublicKey("3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo")  # Гаманець для прийому SPL
-USDT_USDC_SENDER_WALLET = PublicKey("4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26dF3cVU")  # Гаманець для відправки USDT/USDC
-USDT_USDC_MINT = PublicKey("Es9vMFrzaCER5FjexzX3p2rN3TDXfQFZ9if4x7bqc4Hy")  # USDT SPL-токен
+# Гаманець, на який користувачі будуть надсилати токени
+RECEIVING_WALLET = "4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26dF3cVU"
 
-# 🔹 Секретний ключ відправника
-SECRET_KEY = os.getenv("SOLANA_SECRET_KEY")
-if not SECRET_KEY:
-    raise ValueError("❌ ERROR: Set SOLANA_SECRET_KEY in environment variables!")
-
-SENDER_KEYPAIR = Keypair.from_bytes(base58.b58decode(SECRET_KEY))
+# Завантаження секретного ключа сервісного гаманця
+SERVICE_WALLET_SECRET = os.getenv("SERVICE_WALLET_SECRET")  # Змінна середовища
+service_wallet = Keypair.from_base58_string(SERVICE_WALLET_SECRET)
 
 
-# 🔹 Отримання курсу SOL -> USDT
-def get_usdt_exchange_rate():
-    url = "https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT"
-    response = requests.get(url).json()
-    return float(response["price"]) * 0.00048  # Враховуємо курс токена SPL
+@app.route("/connect_wallet", methods=["POST"])
+def connect_wallet():
+    """Підключення гаманця користувача"""
+    data = request.json
+    wallet_address = data.get("wallet")
+    wallet_type = data.get("type")
+
+    if not wallet_address:
+        return jsonify({"error": "Wallet address required"}), 400
+
+    return jsonify({"success": True, "wallet": wallet_address, "type": wallet_type})
 
 
-# 🔹 Отримання суми SPL-токенів з транзакції
-async def get_spl_amount(client: AsyncClient, transaction_id: str) -> int:
-    txn = await client.get_transaction(Signature.from_string(transaction_id), commitment="finalized")
+@app.route("/exchange", methods=["POST"])
+def exchange_tokens():
+    """Обмін SPL-токенів на USDT/USDC"""
+    data = request.json
+    user_wallet = data.get("wallet")
+    amount = float(data.get("amount"))
+    token_type = data.get("token_type")
 
-    if txn is None or "result" not in txn or txn["result"] is None:
-        raise HTTPException(status_code=400, detail="Transaction not found")
+    if not user_wallet or amount <= 0:
+        return jsonify({"error": "Invalid request"}), 400
 
-    meta = txn["result"]["meta"]
-    pre_balances = meta["preTokenBalances"]
-    post_balances = meta["postTokenBalances"]
-
-    for pre, post in zip(pre_balances, post_balances):
-        if pre["owner"] == SPL_RECEIVER_WALLET.to_string():
-            amount_received = int(post["uiTokenAmount"]["amount"]) - int(pre["uiTokenAmount"]["amount"])
-            return amount_received
-
-    raise HTTPException(status_code=400, detail="SPL amount not found in transaction")
-
-
-# 🔹 Основна функція обміну
-@app.post("/exchange")
-async def exchange_tokens(user_wallet: str, spl_transaction_id: str):
-    client = AsyncClient(SOLANA_RPC_URL)
+    if token_type not in ["USDT", "USDC"]:
+        return jsonify({"error": "Only USDT and USDC supported"}), 400
 
     try:
-        # 🔸 Отримуємо суму відправлених SPL-токенів
-        spl_amount = await get_spl_amount(client, spl_transaction_id)
-        if spl_amount <= 0:
-            raise HTTPException(status_code=400, detail="Invalid SPL token amount")
-
-        # 🔸 Конвертація у USDT
-        usdt_amount = int(spl_amount * get_usdt_exchange_rate() * 10**TOKEN_DECIMALS)  # Конвертація у лампорти
-
-        # 🔸 Отримуємо токен-акаунт користувача
-        user_token_accounts = await client.get_token_accounts_by_owner(
-            PublicKey(user_wallet),
-            TokenAccountOpts(mint=USDT_USDC_MINT)
+        # Підготовка транзакції
+        tx = Transaction().add(
+            transfer(
+                TransferParams(
+                    from_pubkey=service_wallet.pubkey(),
+                    to_pubkey=PublicKey(user_wallet),
+                    lamports=int(amount * 1_000_000)  # 1 USDT = 1_000_000 lamports
+                )
+            )
         )
 
-        if not user_token_accounts["result"]["value"]:
-            raise HTTPException(status_code=400, detail="User has no USDT/USDC token account")
+        # Підпис транзакції
+        tx.sign(service_wallet)
 
-        user_usdt_account = PublicKey(user_token_accounts["result"]["value"][0]["pubkey"])
+        # Відправка транзакції
+        tx_sig = solana_client.send_transaction(tx)
 
-        # 🔸 Створюємо інструкцію переказу USDT
-        usdt_transfer_instr = transfer_checked(
-            source=USDT_USDC_SENDER_WALLET,
-            dest=user_usdt_account,
-            owner=SENDER_KEYPAIR.pubkey(),
-            mint=USDT_USDC_MINT,
-            amount=usdt_amount,
-            decimals=TOKEN_DECIMALS,
-            program_id=TOKEN_PROGRAM_ID,
-        )
-
-        # 🔸 Відправляємо транзакцію
-        txn = await client.send_transaction(usdt_transfer_instr, SENDER_KEYPAIR)
-
-        return {"message": "Exchange successful", "transaction_id": txn.value}
-
+        return jsonify({"success": True, "txid": str(tx_sig)})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    finally:
-        await client.close()
+        return jsonify({"error": str(e)}), 500
 
 
+@app.route("/check_transaction/<txid>", methods=["GET"])
+def check_transaction(txid):
+    """Перевірка статусу транзакції"""
+    try:
+        result = solana_client.get_transaction(txid)
+        return jsonify({"status": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
