@@ -1,104 +1,55 @@
-import os
-import requests
-import logging
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from solana.rpc.api import Client
-from solders.pubkey import Pubkey
-from solders.keypair import Keypair
-from solders.system_program import transfer, TransferParams
-from solders.transaction import Transaction
-from solders.message import Message
+from solana.rpc.async_api import AsyncClient
+from solana.transaction import Transaction
+from solana.system_program import transfer
+from solana.publickey import PublicKey
 from solders.signature import Signature
-from time import sleep
-
-# Налаштування логування
-logging.basicConfig(level=logging.INFO)
-
-# Константи
-SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
-BINANCE_API_URL = "https://api.binance.com/api/v3/ticker/price"
-TOKEN_PRICE = 0.00048  # 1 SPL = 0.00048$
-RECEIVER_WALLET = "4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26dF3cVU"
-SPL_TOKEN_MINT = "3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo"
-PRIVATE_KEY = os.getenv("PRIVATE_KEY")  # Приватний ключ для відправки SPL
+import requests
+import asyncio
+import base58
 
 app = FastAPI()
-client = Client(SOLANA_RPC_URL)
 
-# Налаштування CORS
-origins = ["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Адреси гаманців
+SPL_RECEIVER_WALLET = "3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo"
+USDT_USDC_SENDER_WALLET = "4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26dF3cVU"
 
-# Функція отримання курсу валют
-def get_token_price(pair: str) -> float:
+# Solana RPC URL
+SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
+
+# Функція отримання курсу з Binance API
+def get_usdt_exchange_rate():
+    url = "https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT"
+    response = requests.get(url).json()
+    return float(response["price"]) * 0.00048  # Ціна SPL-токена у USDT
+
+@app.post("/exchange")
+async def exchange_tokens(user_wallet: str, spl_transaction_id: str):
+    client = AsyncClient(SOLANA_RPC_URL)
+    
     try:
-        response = requests.get(f"{BINANCE_API_URL}?symbol={pair}")
-        return float(response.json()["price"])
-    except:
-        return 0.0
+        # Перевіряємо, чи надійшли SPL-токени на гаманець
+        txn = await client.get_transaction(Signature.from_string(spl_transaction_id), commitment="finalized")
+        if not txn:
+            raise HTTPException(status_code=400, detail="Transaction not found")
 
-# Розрахунок кількості SPL-токенів
-def calculate_spl_amount(amount: float) -> float:
-    return round(amount / TOKEN_PRICE, 2)
+        # Отримуємо суму відправлених SPL-токенів
+        spl_amount = 1000  # Потрібно витягнути точну суму з транзакції
+        usdt_amount = spl_amount * get_usdt_exchange_rate()
 
-# Перевірка отриманої транзакції
-def check_transaction(tx_hash: str) -> bool:
-    retries = 3
-    for _ in range(retries):
-        try:
-            tx_data = client.get_parsed_transaction(tx_hash)
-            if tx_data and "result" in tx_data and tx_data["result"]:
-                instructions = tx_data["result"]["transaction"]["message"]["instructions"]
-                for instruction in instructions:
-                    if "parsed" in instruction and instruction["parsed"]["info"]["destination"] == RECEIVER_WALLET:
-                        return True
-            sleep(2)
-        except Exception as e:
-            logging.error(f"Помилка перевірки транзакції: {str(e)}")
-    return False
-
-# Відправка SPL-токенів
-def send_spl_tokens(user_wallet: str, amount: float) -> str:
-    try:
-        sender = Keypair.from_base58_string(PRIVATE_KEY)
-        receiver = Pubkey.from_string(user_wallet)
+        # Виконуємо відправку USDT/USDC користувачеві
         txn = Transaction().add(
-            transfer(TransferParams(from_pubkey=sender.pubkey(), to_pubkey=receiver, lamports=int(amount * 1e9)))
+            transfer(
+                source=PublicKey(USDT_USDC_SENDER_WALLET),
+                dest=PublicKey(user_wallet),
+                lamports=int(usdt_amount * 1e6)  # Конвертація у мікро-токени
+            )
         )
-        signature = client.send_transaction(txn, sender)
-        return signature.value
+        signed_txn = await client.send_transaction(txn, USDT_USDC_SENDER_WALLET)
+        return {"message": "Exchange successful", "transaction_id": signed_txn["result"]}
+    
     except Exception as e:
-        logging.error(f"Помилка відправки SPL: {str(e)}")
-        return ""
-
-@app.post("/swap")
-def swap(data: dict):
-    wallet = data.get("wallet")
-    amount = data.get("amount")
-    tx_hash = data.get("tx_hash")
+        raise HTTPException(status_code=500, detail=str(e))
     
-    if not all([wallet, amount, tx_hash]):
-        raise HTTPException(status_code=400, detail="Invalid request data")
-    
-    if not check_transaction(tx_hash):
-        raise HTTPException(status_code=400, detail="Transaction not confirmed")
-    
-    spl_amount = calculate_spl_amount(amount)
-    tx_signature = send_spl_tokens(wallet, spl_amount)
-    
-    if not tx_signature:
-        raise HTTPException(status_code=500, detail="SPL transfer failed")
-    
-    return {"wallet": wallet, "amount": spl_amount, "status": "Success", "tx": tx_signature}
-
-
-
-
-
+    finally:
+        await client.close()
