@@ -19,7 +19,7 @@ app = FastAPI()
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 
 # 🔹 Адреси гаманців
-SPL_RECEIVER_WALLET = PublicKey("3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo")  # Гаманець для прийому SPL
+SPL_RECEIVER_WALLET = PublicKey.from_string("3EwV6VTHYHrkrZ3UJcRRAxnuHiaeb8EntqX85Khj98Zo")  # Гаманець для прийому SPL
 USDT_USDC_SENDER_WALLET = PublicKey("4ofLfgCmaJYC233vTGv78WFD4AfezzcMiViu26dF3cVU")  # Гаманець для відправки USDT/USDC
 
 # 🔹 Секретний ключ відправника (додається в .env або Render)
