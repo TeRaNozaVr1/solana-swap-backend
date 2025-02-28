@@ -4,7 +4,7 @@ import base58
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from solana.rpc.async_api import AsyncClient
-from solana.transaction import Transaction
+from solders.transaction import Transaction
 from solana.system_program import transfer
 from solana.publickey import PublicKey
 from solders.signature import Signature
