@@ -1,6 +1,6 @@
 import os
 from solana.rpc.api import Client
-from solana.publicKey import PublicKey
+from solathon import PublicKey
 from solana.keypair import Keypair
 from pyserum.client import Client as SerumClient
 from pyserum.market import Market
