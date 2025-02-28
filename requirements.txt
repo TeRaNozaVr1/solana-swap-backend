@@ -1,14 +1,8 @@
 fastapi
 Flask
-uvicorn
+flask_cors
 base58
 solana
-pyserum
 python-dotenv
-httpx
-aiohttp
-orjson
-loguru
-pytz
 requests
 solders
