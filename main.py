@@ -67,7 +67,9 @@ def exchange_tokens():
 
         # Крок 2: Створення транзакції для обміну
         # Тут необхідно використовувати алгоритм для заміни токенів через знайдений маршрут
-        tx = Transaction().add(
+        tx = Transaction()
+
+        tx.add(
             transfer(
                 TransferParams(
                     from_pubkey=service_wallet.pubkey(),
