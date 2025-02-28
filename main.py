@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.types import MemcmpOpts, TokenAccountOpts
 from solders.signature import Signature
-from solders.pubkey import Pubkey as PublicKey
+from solana.publickey import PublicKey
 from solders.keypair import Keypair
 from spl.token.instructions import transfer_checked
 from spl.token.constants import TOKEN_PROGRAM_ID
